@@ -213,6 +213,35 @@ module Traceloop
           yield
         end
       end
+
+      class GuardrailTracer
+        def initialize(span, provider)
+          @span = span
+          @provider = provider
+        end
+
+        def log_guardrail_response(response)
+          @span.add_attributes({
+          "#{OpenTelemetry::SemanticConventionsAi::SpanAttributes::GEN_AI_PROMPTS}.prompt_filter_results" => response,
+         })
+        end
+      end
+
+      def guardrail(name, provider, conversation_id: nil)
+        @tracer.in_span("#{name}.guardrails") do |span|
+          attributes = {
+            OpenTelemetry::SemanticConventionsAi::SpanAttributes::GEN_AI_SYSTEM => provider,
+            OpenTelemetry::SemanticConventionsAi::SpanAttributes::GEN_AI_PROVIDER => provider,
+          }
+
+          if conversation_id
+            attributes[OpenTelemetry::SemanticConventionsAi::SpanAttributes::GEN_AI_CONVERSATION_ID] = conversation_id
+          end
+
+          span.add_attributes(attributes)
+          yield GuardrailTracer.new(span, provider)
+        end
+      end
     end
   end
 end
