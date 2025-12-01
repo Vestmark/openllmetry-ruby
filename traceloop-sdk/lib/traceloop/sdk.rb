@@ -221,9 +221,100 @@ module Traceloop
         end
 
         def log_guardrail_response(response)
-          @span.add_attributes({
-          "#{OpenTelemetry::SemanticConventionsAi::SpanAttributes::GEN_AI_PROMPTS}.prompt_filter_results" => response,
-         })
+          # Normalize keys to strings to make access easier
+          r = deep_stringify_keys(response || {})
+
+          activation = guardrail_activation(r)
+          blocked_words = guardrail_blocked_words(r)
+          content_filtered = guardrail_content_filtered(r)
+
+          attrs = {
+            "#{OpenTelemetry::SemanticConventionsAi::SpanAttributes::GEN_AI_PROMPTS}.prompt_filter_results" => response,
+
+            "#{OpenTelemetry::SemanticConventionsAi::SpanAttributes::GEN_AI_BEDROCK_GUARDRAILS}.activation" => activation,         # boolean
+            "#{OpenTelemetry::SemanticConventionsAi::SpanAttributes::GEN_AI_BEDROCK_GUARDRAILS}.words"      => blocked_words,      # integer
+            "#{OpenTelemetry::SemanticConventionsAi::SpanAttributes::GEN_AI_BEDROCK_GUARDRAILS}.content"    => content_filtered,   # integer (0/1)
+
+            "#{OpenTelemetry::SemanticConventionsAi::SpanAttributes::GEN_AI_BEDROCK_GUARDRAILS}.action"                 => r["action"] || "NONE",
+            "#{OpenTelemetry::SemanticConventionsAi::SpanAttributes::GEN_AI_BEDROCK_GUARDRAILS}.content_policy_units"   => (r.dig("usage", "content_policy_units") || 0),
+            "#{OpenTelemetry::SemanticConventionsAi::SpanAttributes::GEN_AI_BEDROCK_GUARDRAILS}.word_policy_units"      => (r.dig("usage", "word_policy_units") || 0),
+            "#{OpenTelemetry::SemanticConventionsAi::SpanAttributes::GEN_AI_BEDROCK_GUARDRAILS}.topic_policy_units"     => (r.dig("usage", "topic_policy_units") || 0),
+            "#{OpenTelemetry::SemanticConventionsAi::SpanAttributes::GEN_AI_BEDROCK_GUARDRAILS}.sensitive_policy_units" => (r.dig("usage", "sensitive_information_policy_units") || 0)
+          }
+
+          @span.add_attributes(attrs)
+        end
+
+        private
+
+        def deep_stringify_keys(obj)
+          case obj
+          when Hash
+            obj.each_with_object({}) do |(k, v), h|
+              h[k.to_s] = deep_stringify_keys(v)
+            end
+          when Array
+            obj.map { |v| deep_stringify_keys(v) }
+          else
+            obj
+          end
+        end
+
+        def guardrail_activation(r)
+          usage = r["usage"] || {}
+
+          units =
+            (usage["topic_policy_units"] || 0).to_i +
+              (usage["content_policy_units"] || 0).to_i +
+              (usage["word_policy_units"] || 0).to_i +
+              (usage["sensitive_information_policy_units"] || 0).to_i
+
+          units > 0 || (r["assessments"].is_a?(Array) && !r["assessments"].empty?)
+        end
+
+        def guardrail_blocked_words(r)
+          assessments = r["assessments"] || []
+
+          total = 0
+
+          assessments.each do |a|
+            word_policy = a["word_policy"] || {}
+
+            # custom_words: [{ "match" => "API", "action" => "BLOCKED", "detected" => true }]
+            custom_words = word_policy["custom_words"] || []
+            custom_words.each do |cw|
+              if cw["detected"] == true || cw["action"] == "BLOCKED"
+                total += 1
+              end
+            end
+
+            managed_lists = word_policy["managed_word_lists"] || []
+            managed_lists.each do |entry|
+              if entry["detected"] == true || entry["action"] == "BLOCKED"
+                total += 1
+              end
+            end
+          end
+
+          total
+        end
+
+        def guardrail_content_filtered(r)
+          action = r["action"]
+          return 1 if action && action != "NONE"
+
+          assessments = r["assessments"] || []
+          assessments.each do |a|
+            filters = a.dig("content_policy", "filters") || []
+            filters.each do |f|
+              detected = f["detected"]
+              fa       = f["action"]
+
+              return 1 if detected == true || (fa && fa != "NONE")
+            end
+          end
+
+          0
         end
       end
 
