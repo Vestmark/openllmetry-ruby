@@ -40,7 +40,7 @@ module Traceloop
         puts "Service name: #{@service_name}"
 
         # Get tracer from instance-specific provider
-        @tracer = @tracer_provider.tracer("Traceloop", version: "0.1.5")
+        @tracer = @tracer_provider.tracer("Traceloop", "0.1.5")
       end
 
       def shutdown
