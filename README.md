@@ -68,6 +68,58 @@ That's it. You're now tracing your code with OpenLLMetry!
 
 Now, you need to decide where to export the traces to.
 
+## ⚙️ Configuration
+
+### Service Name
+
+You can customize your service name by providing a `name` parameter:
+
+```ruby
+require "traceloop/sdk"
+
+# Without name suffix (uses OTEL_SERVICE_NAME as-is)
+traceloop = Traceloop::SDK::Traceloop.new
+
+# With name suffix (prepends to OTEL_SERVICE_NAME)
+traceloop = Traceloop::SDK::Traceloop.new(name: "worker")
+# If OTEL_SERVICE_NAME="my-app", this creates "worker-my-app"
+```
+
+### Multiple Service Instances
+
+You can create multiple Traceloop instances with different service names in the same application:
+
+```ruby
+traceloop_api = Traceloop::SDK::Traceloop.new(name: "api")
+traceloop_worker = Traceloop::SDK::Traceloop.new(name: "worker")
+traceloop_scheduler = Traceloop::SDK::Traceloop.new(name: "scheduler")
+
+# Each instance traces with its own service name:
+# - "api-my-app"
+# - "worker-my-app"
+# - "scheduler-my-app"
+```
+
+### Environment Variables
+
+Set the base service name using the standard OpenTelemetry environment variable:
+
+```bash
+export OTEL_SERVICE_NAME="my-app"
+```
+
+If not set, defaults to `"unknown_service:ruby"`.
+
+### Cleanup
+
+When shutting down your application, ensure spans are properly flushed:
+
+```ruby
+traceloop = Traceloop::SDK::Traceloop.new
+# ... use traceloop ...
+traceloop.shutdown  # Flush remaining spans before exit
+```
+
 ## ⏫ Supported (and tested) destinations
 
 - [x] [Traceloop](https://www.traceloop.com/docs/openllmetry/integrations/traceloop)

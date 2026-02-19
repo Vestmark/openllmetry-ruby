@@ -5,25 +5,46 @@ require 'opentelemetry-semantic_conventions_ai'
 module Traceloop
   module SDK
     class Traceloop
-      def initialize
+      def initialize(name: nil)
         api_key = ENV["TRACELOOP_API_KEY"]
         raise "TRACELOOP_API_KEY environment variable is required" if api_key.nil? || api_key.empty?
 
-        OpenTelemetry::SDK.configure do |c|
-          c.add_span_processor(
-            OpenTelemetry::SDK::Trace::Export::BatchSpanProcessor.new(
-              OpenTelemetry::Exporter::OTLP::Exporter.new(
-                endpoint: "#{ENV.fetch("TRACELOOP_BASE_URL", "https://api.traceloop.com")}/v1/traces",
-                headers: {
-                  "Authorization" => "#{ENV.fetch("TRACELOOP_AUTH_SCHEME", "Bearer")} #{ENV.fetch("TRACELOOP_API_KEY")}"
-                }
-              )
-            )
-          )
-          puts "Traceloop exporting traces to #{ENV.fetch("TRACELOOP_BASE_URL", "https://api.traceloop.com")}"
-        end
+        # Construct service name
+        base_name = ENV["OTEL_SERVICE_NAME"] || "unknown_service:ruby"
+        @service_name = name ? "#{name}-#{base_name}" : base_name
 
-        @tracer = OpenTelemetry.tracer_provider.tracer("Traceloop")
+        # Create resource with service name
+        resource = OpenTelemetry::SDK::Resources::Resource.create(
+          OpenTelemetry::SemanticConventions::Resource::SERVICE_NAME => @service_name
+        )
+
+        # Create instance-specific tracer provider
+        @tracer_provider = OpenTelemetry::SDK::Trace::TracerProvider.new(
+          resource: resource
+        )
+
+        # Configure OTLP exporter for this instance
+        exporter = OpenTelemetry::Exporter::OTLP::Exporter.new(
+          endpoint: "#{ENV.fetch("TRACELOOP_BASE_URL", "https://api.traceloop.com")}/v1/traces",
+          headers: {
+            "Authorization" => "#{ENV.fetch("TRACELOOP_AUTH_SCHEME", "Bearer")} #{ENV.fetch("TRACELOOP_API_KEY")}"
+          }
+        )
+
+        # Add span processor to this instance's provider
+        @tracer_provider.add_span_processor(
+          OpenTelemetry::SDK::Trace::Export::BatchSpanProcessor.new(exporter)
+        )
+
+        puts "Traceloop exporting traces to #{ENV.fetch("TRACELOOP_BASE_URL", "https://api.traceloop.com")}"
+        puts "Service name: #{@service_name}"
+
+        # Get tracer from instance-specific provider
+        @tracer = @tracer_provider.tracer("Traceloop", version: "0.1.5")
+      end
+
+      def shutdown
+        @tracer_provider&.shutdown
       end
 
       class Tracer
