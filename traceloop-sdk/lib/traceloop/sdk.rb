@@ -11,7 +11,8 @@ module Traceloop
 
         # Construct service name
         base_name = ENV["OTEL_SERVICE_NAME"] || "unknown_service:ruby"
-        @service_name = name ? "#{name}-#{base_name}" : base_name
+        otel_environment = ENV["OTEL_ENVIRONMENT"] || "unknown"
+        @service_name = name ? "#{name}-#{otel_environment}" : base_name
 
         # Create resource with service name
         resource = OpenTelemetry::SDK::Resources::Resource.create(
