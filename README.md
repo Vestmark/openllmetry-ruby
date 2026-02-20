@@ -77,12 +77,14 @@ You can customize your service name by providing a `name` parameter:
 ```ruby
 require "traceloop/sdk"
 
-# Without name suffix (uses OTEL_SERVICE_NAME as-is)
+# Without name parameter (uses OTEL_SERVICE_NAME as-is)
 traceloop = Traceloop::SDK::Traceloop.new
+# Service name: value of OTEL_SERVICE_NAME, or "unknown_service:ruby"
 
-# With name suffix (prepends to OTEL_SERVICE_NAME)
+# With name parameter (combines name with OTEL_ENVIRONMENT)
 traceloop = Traceloop::SDK::Traceloop.new(name: "worker")
-# If OTEL_SERVICE_NAME="my-app", this creates "worker-my-app"
+# Service name: "worker-production" (if OTEL_ENVIRONMENT="production")
+# Service name: "worker-unknown" (if OTEL_ENVIRONMENT not set)
 ```
 
 ### Multiple Service Instances
@@ -94,21 +96,27 @@ traceloop_api = Traceloop::SDK::Traceloop.new(name: "api")
 traceloop_worker = Traceloop::SDK::Traceloop.new(name: "worker")
 traceloop_scheduler = Traceloop::SDK::Traceloop.new(name: "scheduler")
 
-# Each instance traces with its own service name:
-# - "api-my-app"
-# - "worker-my-app"
-# - "scheduler-my-app"
+# Each instance traces with its own service name (assuming OTEL_ENVIRONMENT="production"):
+# - "api-production"
+# - "worker-production"
+# - "scheduler-production"
 ```
 
 ### Environment Variables
 
-Set the base service name using the standard OpenTelemetry environment variable:
+Control your service naming using standard OpenTelemetry environment variables:
 
 ```bash
+# Used when no name parameter is provided
 export OTEL_SERVICE_NAME="my-app"
+
+# Combined with name parameter: "worker-production"
+export OTEL_ENVIRONMENT="production"
 ```
 
-If not set, defaults to `"unknown_service:ruby"`.
+Defaults:
+- `OTEL_SERVICE_NAME` defaults to `"unknown_service:ruby"`
+- `OTEL_ENVIRONMENT` defaults to `"unknown"`
 
 ### Cleanup
 

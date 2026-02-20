@@ -1,12 +1,13 @@
 require 'aws-sdk-bedrockruntime'
 require "traceloop/sdk"
 
-# Example 1: No name suffix (backward compatible)
+# Example 1: No name parameter (backward compatible)
 # Uses OTEL_SERVICE_NAME as-is, or defaults to "unknown_service:ruby"
 traceloop = Traceloop::SDK::Traceloop.new
 
-# Example 2: With name suffix
-# If OTEL_SERVICE_NAME="my-app", this creates "bedrock-worker-my-app"
+# Example 2: With name parameter
+# Creates service name as "#{name}-#{OTEL_ENVIRONMENT}"
+# If OTEL_ENVIRONMENT="production", this creates "bedrock-worker-production"
 # traceloop = Traceloop::SDK::Traceloop.new(name: "bedrock-worker")
 
 model = "anthropic.claude-3-sonnet-20240229-v1:0"

@@ -7,15 +7,19 @@ end
 
 client = OpenAI::Client.new
 
-# Example 1: No name suffix (backward compatible)
+# Example 1: No name parameter (backward compatible)
 # Uses OTEL_SERVICE_NAME as-is, or defaults to "unknown_service:ruby"
 traceloop = Traceloop::SDK::Traceloop.new
 
-# Example 2: With name suffix
-# If OTEL_SERVICE_NAME="my-app", this creates "worker-my-app"
+# Example 2: With name parameter
+# Creates service name as "#{name}-#{OTEL_ENVIRONMENT}"
+# If OTEL_ENVIRONMENT="production", this creates "worker-production"
 # traceloop_worker = Traceloop::SDK::Traceloop.new(name: "worker")
 
-# Example 3: Multiple instances
+# Example 3: Multiple instances with different names
+# If OTEL_ENVIRONMENT="production":
+# - traceloop_api: "api-production"
+# - traceloop_background: "background-production"
 # traceloop_api = Traceloop::SDK::Traceloop.new(name: "api")
 # traceloop_background = Traceloop::SDK::Traceloop.new(name: "background")
 
