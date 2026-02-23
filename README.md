@@ -68,6 +68,66 @@ That's it. You're now tracing your code with OpenLLMetry!
 
 Now, you need to decide where to export the traces to.
 
+## ⚙️ Configuration
+
+### Service Name
+
+You can customize your service name by providing a `name` parameter:
+
+```ruby
+require "traceloop/sdk"
+
+# Without name parameter (uses OTEL_SERVICE_NAME as-is)
+traceloop = Traceloop::SDK::Traceloop.new
+# Service name: value of OTEL_SERVICE_NAME, or "unknown_service:ruby"
+
+# With name parameter (combines name with OTEL_ENVIRONMENT)
+traceloop = Traceloop::SDK::Traceloop.new(name: "worker")
+# Service name: "worker-production" (if OTEL_ENVIRONMENT="production")
+# Service name: "worker-unknown" (if OTEL_ENVIRONMENT not set)
+```
+
+### Multiple Service Instances
+
+You can create multiple Traceloop instances with different service names in the same application:
+
+```ruby
+traceloop_api = Traceloop::SDK::Traceloop.new(name: "api")
+traceloop_worker = Traceloop::SDK::Traceloop.new(name: "worker")
+traceloop_scheduler = Traceloop::SDK::Traceloop.new(name: "scheduler")
+
+# Each instance traces with its own service name (assuming OTEL_ENVIRONMENT="production"):
+# - "api-production"
+# - "worker-production"
+# - "scheduler-production"
+```
+
+### Environment Variables
+
+Control your service naming using standard OpenTelemetry environment variables:
+
+```bash
+# Used when no name parameter is provided
+export OTEL_SERVICE_NAME="my-app"
+
+# Combined with name parameter: "worker-production"
+export OTEL_ENVIRONMENT="production"
+```
+
+Defaults:
+- `OTEL_SERVICE_NAME` defaults to `"unknown_service:ruby"`
+- `OTEL_ENVIRONMENT` defaults to `"unknown"`
+
+### Cleanup
+
+When shutting down your application, ensure spans are properly flushed:
+
+```ruby
+traceloop = Traceloop::SDK::Traceloop.new
+# ... use traceloop ...
+traceloop.shutdown  # Flush remaining spans before exit
+```
+
 ## ⏫ Supported (and tested) destinations
 
 - [x] [Traceloop](https://www.traceloop.com/docs/openllmetry/integrations/traceloop)
