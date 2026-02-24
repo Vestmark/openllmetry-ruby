@@ -93,6 +93,8 @@ module Traceloop
           # https://github.com/gbaptista/gemini-ai?tab=readme-ov-file#generate_content
           elsif response.respond_to?(:has_key?) && response.has_key?("candidates")
             log_gemini_response(response)
+          elsif response.is_a?(String)
+            log_string_message(response)
           else
             log_openai_response(response)
           end
@@ -126,6 +128,15 @@ module Traceloop
              "#{OpenTelemetry::SemanticConventionsAi::SpanAttributes::GEN_AI_COMPLETIONS}.0.role" => "tool",
              "#{OpenTelemetry::SemanticConventionsAi::SpanAttributes::GEN_AI_COMPLETIONS}.0.content" => response.content
           })
+        end
+
+        # enables users to log messages with raw text that did not come from an LLM, this allows DT to complete traces
+        def log_string_message(response)
+          @span.add_attributes({
+           OpenTelemetry::SemanticConventionsAi::SpanAttributes::GEN_AI_RESPONSE_MODEL => @model,
+           "#{OpenTelemetry::SemanticConventionsAi::SpanAttributes::GEN_AI_COMPLETIONS}.0.role" => "assistant",
+           "#{OpenTelemetry::SemanticConventionsAi::SpanAttributes::GEN_AI_COMPLETIONS}.0.content" => response
+        })
         end
 
         def log_bedrock_response(response)
@@ -176,6 +187,102 @@ module Traceloop
 "choices", 0, "message", "content")
             })
           end
+        end
+
+        def log_guardrail_response(response)
+          r = deep_stringify_keys(response || {})
+
+          activation = guardrail_activation(r)
+          words_blocked, blocked_words = guardrail_blocked_words(r)
+          content_filtered, type, confidence = guardrail_content_filtered(r)
+
+          attrs = {
+            "#{OpenTelemetry::SemanticConventionsAi::SpanAttributes::GEN_AI_PROMPTS}.prompt_filter_results" => [type, confidence].to_s,
+
+            "#{OpenTelemetry::SemanticConventionsAi::SpanAttributes::GEN_AI_BEDROCK_GUARDRAILS}.activation" => activation,
+            "#{OpenTelemetry::SemanticConventionsAi::SpanAttributes::GEN_AI_BEDROCK_GUARDRAILS}.words" => words_blocked,
+            "#{OpenTelemetry::SemanticConventionsAi::SpanAttributes::GEN_AI_BEDROCK_GUARDRAILS}.content" => content_filtered,
+
+            "#{OpenTelemetry::SemanticConventionsAi::SpanAttributes::GEN_AI_BEDROCK_GUARDRAILS}.action" => r["action"] || "NONE",
+            "#{OpenTelemetry::SemanticConventionsAi::SpanAttributes::GEN_AI_BEDROCK_GUARDRAILS}.action_reason" => r["action_reason"] || "No action.",
+            "#{OpenTelemetry::SemanticConventionsAi::SpanAttributes::GEN_AI_BEDROCK_GUARDRAILS}.words.blocked_words" => blocked_words.to_s,
+          }
+
+          @span.add_attributes(attrs)
+        end
+
+        private
+
+        def deep_stringify_keys(obj)
+          case obj
+          when Hash
+            obj.each_with_object({}) do |(k, v), h|
+              h[k.to_s] = deep_stringify_keys(v)
+            end
+          when Array
+            obj.map { |v| deep_stringify_keys(v) }
+          else
+            obj
+          end
+        end
+
+        def guardrail_activation(r)
+          usage = r["usage"] || {}
+
+          units =
+            (usage["topic_policy_units"] || 0).to_i +
+              (usage["content_policy_units"] || 0).to_i +
+              (usage["word_policy_units"] || 0).to_i +
+              (usage["sensitive_information_policy_units"] || 0).to_i
+
+          units > 0 || (r["assessments"].is_a?(Array) && !r["assessments"].empty?)
+        end
+
+        def guardrail_blocked_words(r)
+          assessments = r["assessments"] || []
+
+          total = 0
+          blocked_words = []
+
+          assessments.each do |a|
+            word_policy = a["word_policy"] || {}
+
+            # custom_words: [{ "match" => "API", "action" => "BLOCKED", "detected" => true }]
+            custom_words = word_policy["custom_words"] || []
+            custom_words.each do |cw|
+              if cw["detected"] == true || cw["action"] == "BLOCKED"
+                total += 1
+                blocked_words.append(cw["match"])
+              end
+            end
+
+            managed_lists = word_policy["managed_word_lists"] || []
+            managed_lists.each do |entry|
+              if entry["detected"] == true || entry["action"] == "BLOCKED"
+                total += 1
+                blocked_words.append(entry["match"])
+              end
+            end
+          end
+
+          [total, blocked_words]
+        end
+
+        def guardrail_content_filtered(r)
+          assessments = r["assessments"] || []
+          assessments.each do |a|
+            filters = a.dig("content_policy", "filters") || []
+            filters.each do |f|
+              detected = f["detected"]
+              action = f["action"]
+              type = f["type"]
+              confidence = f["confidence"]
+
+              return [1, type, confidence] if detected == true || (detected && action != "NONE")
+            end
+          end
+
+          [0, "", ""]
         end
       end
 
@@ -232,6 +339,23 @@ module Traceloop
             OpenTelemetry::SemanticConventionsAi::SpanAttributes::TRACELOOP_SPAN_KIND => "tool",
             OpenTelemetry::SemanticConventionsAi::SpanAttributes::TRACELOOP_ENTITY_NAME => name,
           })
+          yield
+        end
+      end
+
+      def guardrail(name, provider, conversation_id: nil)
+        @tracer.in_span("#{name}.guardrails") do |span|
+          attributes = {
+            OpenTelemetry::SemanticConventionsAi::SpanAttributes::GEN_AI_SYSTEM => provider,
+            OpenTelemetry::SemanticConventionsAi::SpanAttributes::GEN_AI_PROVIDER => provider,
+          }
+
+          if conversation_id
+            attributes[OpenTelemetry::SemanticConventionsAi::SpanAttributes::GEN_AI_CONVERSATION_ID] =
+              conversation_id
+          end
+
+          span.add_attributes(attributes)
           yield
         end
       end

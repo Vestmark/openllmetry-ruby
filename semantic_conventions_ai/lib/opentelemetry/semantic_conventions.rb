@@ -41,6 +41,7 @@ module OpenTelemetry
       GEN_AI_SYSTEM = "gen_ai.system"
       GEN_AI_PROVIDER = "gen_ai.provider.name"
       GEN_AI_CONVERSATION_ID = "gen_ai.conversation.id"
+      GEN_AI_BEDROCK_GUARDRAILS = "gen_ai.bedrock.guardrail"
     end
 
     module LLMRequestTypeValues
